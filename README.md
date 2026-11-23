@@ -13,13 +13,15 @@ The host trainer keeps its backbone, optimizer, data loader, and checkpoint life
 
 > The practical design question is simple: when a readout is still moving, which classes deserve another inner step, and how much physical work should that decision cost?
 
-## Architecture
-
 <p align="center">
-  <img src="docs/architecture.png" alt="PV-MFAPS plug-in architecture" width="100%">
+  <img src="docs/architecture.png" alt="PV-MFAPS plug-in architecture" width="860">
 </p>
 
-The complete figure is embedded at full width. If the page viewport is narrow, use the image link to open the uncropped original. The full execution path is visible in the diagram. The editable vector source remains available at [`docs/architecture.svg`](docs/architecture.svg), while the PNG is the primary README preview. FIT calibration produces the quantities used by the allocator. The allocator returns a per-class `(k, alpha)` plan and a certificate. The host can then choose the Legacy or Fused executor while preserving the same logical action sequence.
+<p align="center"><a href="docs/architecture.png">Open the complete architecture figure</a> · <a href="docs/architecture.svg">Open the editable SVG source</a></p>
+
+## Architecture
+
+The figure is placed near the top of the README so the whole plug-in can be understood before the implementation details. FIT calibration produces the quantities used by the allocator. The allocator returns a per-class `(k, alpha)` plan and a certificate. The host can then choose the Legacy or Fused executor while preserving the same logical action sequence.
 
 ```mermaid
 flowchart LR
