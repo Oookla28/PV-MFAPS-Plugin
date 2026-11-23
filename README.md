@@ -64,7 +64,7 @@ PYTHONPATH=src python scripts/smoke.py
 如果你的训练器已经准备好了 FIT-only 校准 JSON，可以直接生成动作计划。
 
 ```bash
-PYTHONPATH=src python scripts/plantsdp_plugin_runner.py \
+PYTHONPATH=src python scripts/build_action_plan.py \
   --calibration examples/calibration.json \
   --budget 0.50 \
   --output artifacts/action_plan.json
