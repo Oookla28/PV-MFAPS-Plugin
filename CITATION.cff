@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: "If you use PV-MFAPS Plugin, please cite this repository."
+title: "PV-MFAPS Plugin"
+type: software
+version: 0.1.0
+date-released: 2026-11-23
+repository-code: "https://github.com/Oookla28/PV-MFAPS-Plugin"
+authors:
+  - family-names: "Oookla28"
+    given-names: ""
+license: MIT
+abstract: >-
+  A feedback-aware finite-action allocation layer for long-tailed training,
+  with long-tail loss helpers, fused execution hooks, and auditable traces.
