@@ -76,9 +76,7 @@ $$
 对类别 `c` 和动作 `a=(k,α)`，默认风险代理为
 
 $$
-U_c(k,\alpha)
-=(1-\alpha)^2 A_c\rho_c^{2k}
-+\alpha^2\frac{\sigma_c^2}{n_c}\xi^k.
+U_c(k,\alpha)=(1-\alpha)^2 A_c\rho_c^{2k}+\alpha^2\frac{\sigma_c^2}{n_c}\xi^k.
 $$
 
 第一项随 `k` 变化，描述当前读出误差在内循环中的衰减。第二项包含 `σ_c`、样本支持 `n_c` 和增长因子 `ξ`，用来表示参考反馈的波动和精化动作的稳定性代价。
