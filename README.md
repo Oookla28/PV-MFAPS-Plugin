@@ -18,7 +18,7 @@ PV-MFAPS 是一个可以插入现有训练器的模块。它不需要重写 back
   <img src="docs/architecture_supplied.png" alt="PV-MFAPS plug-in architecture" width="860">
 </p>
 
-<p align="center"><a href="docs/architecture_supplied.png">打开完整 PNG</a> · <a href="docs/architecture.svg">打开可编辑 SVG</a></p>
+<p align="center"><a href="docs/architecture_supplied.png">打开完整 PNG</a></p>
 
 图中左侧是一次训练的主流程，右侧是三个关键环节的放大图。数据先进入已有 encoder 和 native readout。FIT-only reference probe 用来估计反馈误差，风险表把这些量整理成每个类别可比较的动作代价，有限动作 DP 再给出具体的动作计划。最后，Legacy 和 Fused 两种执行方式可以在相同逻辑动作下进行对照。
 
