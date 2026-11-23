@@ -22,6 +22,17 @@ PV-MFAPS 是一个可以插入现有训练器的模块。它不需要重写 back
 
 图中左侧是一次训练的主流程，右侧是三个关键环节的放大图。数据先进入已有 encoder 和 native readout。FIT-only reference probe 用来估计反馈误差，风险表把这些量整理成每个类别可比较的动作代价，有限动作 DP 再给出具体的动作计划。最后，Legacy 和 Fused 两种执行方式可以在相同逻辑动作下进行对照。
 
+## 数学推导索引
+
+如果你想先理解数学对象，再看代码，可以按下面的顺序阅读：
+
+1. [反馈残差与归一化指标](docs/derivation.md#1-两个读出头回答一个具体问题)
+2. [最小二分类例子](docs/derivation.md#2-一个最小的二分类例子)
+3. [类别风险表](docs/derivation.md#3-类别风险表)
+4. [带预算的离散优化](docs/derivation.md#4-带预算的离散优化)
+5. [Pareto frontier 动态规划](docs/derivation.md#5-pareto-frontier-动态规划)
+6. [Fused 执行与计算复用](docs/derivation.md#6-fused-执行为什么可以省计算)
+
 ## 这个模块解决什么问题
 
 长尾训练里，常见做法是修改类别权重、调整 logits，或者增加采样次数。这些方法直接作用在分类目标上，但训练过程还有另一个变化来源。分类头 `W_t` 还在更新时，它产生的 encoder 梯度可能和“读出已经充分适应当前表示”时的梯度不同。
@@ -118,9 +129,7 @@ print(plan.certificate)
 默认风险代理写成
 
 $$
- U_c(k,\alpha)
- = (1-\alpha)^2 A_c\rho_c^{2k}
- + \alpha^2\frac{\sigma_c^2}{n_c}\xi^k.
+ U_c(k,\alpha)=(1-\alpha)^2 A_c\rho_c^{2k}+\alpha^2\frac{\sigma_c^2}{n_c}\xi^k.
 $$
 
 第一项表示读出精化带来的偏差变化。第二项表示参考反馈和小样本波动带来的稳定性代价。`ξ` 是一个可配置的增长因子。
@@ -263,13 +272,12 @@ PV-MFAPS-Plugin/
 ├── requirements.txt
 ├── configs/plugin.yaml
 ├── docs/
-│   ├── architecture.png
-│   ├── architecture.svg
+│   ├── architecture_supplied.png
 │   └── derivation.md
 ├── examples/calibration.json
 ├── scripts/
 │   ├── smoke.py
-│   ├── plantsdp_plugin_runner.py
+│   ├── build_action_plan.py
 │   └── equivalence_smoke.py
 ├── src/pv_mfaps_plugin/
 │   ├── __init__.py
