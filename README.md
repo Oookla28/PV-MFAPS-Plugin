@@ -15,9 +15,9 @@ The host trainer keeps its backbone, optimizer, data loader, and checkpoint life
 
 ## Architecture
 
-![PV-MFAPS architecture](docs/architecture.svg)
+![PV-MFAPS architecture](docs/architecture.png)
 
-The full execution path is visible in the diagram. FIT calibration produces the quantities used by the allocator. The allocator returns a per-class `(k, alpha)` plan and a certificate. The host can then choose the Legacy or Fused executor while preserving the same logical action sequence.
+The full execution path is visible in the diagram. The editable vector source remains available at [`docs/architecture.svg`](docs/architecture.svg), while the PNG is the primary README preview. FIT calibration produces the quantities used by the allocator. The allocator returns a per-class `(k, alpha)` plan and a certificate. The host can then choose the Legacy or Fused executor while preserving the same logical action sequence.
 
 ```mermaid
 flowchart LR
