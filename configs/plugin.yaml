@@ -1,0 +1,12 @@
+name: pv-mfaps-plugin
+budget_factor: 1.05
+k_grid: [0, 1, 2, 4]
+alpha_grid: [0.25]
+xi: 1.01
+budget_scale: 1000
+seeds: [3407, 3408, 3409]
+metrics:
+  - macro_f1
+  - tail10_f1
+  - wall_clock_seconds
+  - estimated_flops
