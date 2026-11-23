@@ -1,52 +1,52 @@
 # PV-MFAPS Plugin
 
-**把读出反馈变成可执行的长尾训练动作。**
+**Feedback-aware precision allocation for long-tailed training**
 
-PV-MFAPS 是一个可以插入现有训练器的模块。它不需要重写 backbone，也不要求改变推理接口。它做的事情集中在训练过程中最容易被忽略的一段：当前分类头还没有稳定下来时，encoder 收到的梯度到底是不是我们希望的梯度，以及在有限计算预算下，哪些类别值得再做几步内循环更新。
+PV-MFAPS is a small plug-in layer for an existing training loop. It addresses a specific mismatch in joint encoder–readout training. A classifier head can produce reasonable logits while still sending a different gradient to the encoder from the gradient produced by a readout that has been locally refined on the current representation.
 
-如果你第一次接触这个项目，可以先把它理解成三层：
+The plug-in exposes three separable operations:
 
-- **测量层**：比较当前读出头和参考读出头对 encoder 产生的反馈。
-- **分配层**：根据每个类别的反馈风险，在有限预算中选择 `(k, α)`。
-- **执行层**：复用已经算出的 encoder 特征，减少重复前向，并把逻辑动作和真实计算量分别记录下来。
+- **Measure** the difference between the current and reference readout feedback.
+- **Allocate** a finite inner-loop budget across classes with a discrete Pareto solver.
+- **Execute** the selected actions through a traceable Legacy or Fused path, so logical actions and physical encoder work can be measured separately.
 
-> 训练器决定模型怎样学习，PV-MFAPS 负责回答“这一批数据现在应该把多少精度预算给谁”。
+The host trainer keeps ownership of the backbone, optimizer, data loader and checkpoint lifecycle. PV-MFAPS supplies the calibration, allocation and execution hooks.
 
-## 先看整体结构
+## Architecture at a glance
 
 <p align="center">
   <img src="docs/architecture_supplied.png" alt="PV-MFAPS plug-in architecture" width="860">
 </p>
 
-<p align="center"><a href="docs/architecture_supplied.png">打开完整 PNG</a></p>
+<p align="center"><a href="docs/architecture_supplied.png">Open the complete architecture figure</a></p>
 
-图中左侧是一次训练的主流程，右侧是三个关键环节的放大图。数据先进入已有 encoder 和 native readout。FIT-only reference probe 用来估计反馈误差，风险表把这些量整理成每个类别可比较的动作代价，有限动作 DP 再给出具体的动作计划。最后，Legacy 和 Fused 两种执行方式可以在相同逻辑动作下进行对照。
+The left side of the figure follows one training step. The right side expands the three decisions that determine the plug-in behaviour. A FIT-only reference probe estimates the feedback discrepancy. The risk table turns the calibration quantities into class-conditional action costs. The finite-action solver selects a plan, and the executor applies it without changing the host model interface.
 
-## 数学推导索引
+## Mathematical map
 
-如果你想先理解数学对象，再看代码，可以按下面的顺序阅读：
+The derivation is kept in a separate document so that the README can remain readable during installation and integration.
 
-1. [反馈残差与归一化指标](docs/derivation.md#1-两个读出头回答一个具体问题)
-2. [最小二分类例子](docs/derivation.md#2-一个最小的二分类例子)
-3. [类别风险表](docs/derivation.md#3-类别风险表)
-4. [带预算的离散优化](docs/derivation.md#4-带预算的离散优化)
-5. [Pareto frontier 动态规划](docs/derivation.md#5-pareto-frontier-动态规划)
-6. [Fused 执行与计算复用](docs/derivation.md#6-fused-执行为什么可以省计算)
+1. [Feedback residual and normalized gap](docs/derivation.md#1-two-readout-heads-one-measurable-question)
+2. [A two-class example](docs/derivation.md#2-a-minimal-two-class-example)
+3. [Classwise risk table](docs/derivation.md#3-the-classwise-risk-table)
+4. [Budgeted discrete optimization](docs/derivation.md#4-budgeted-discrete-optimization)
+5. [Pareto-frontier dynamic programming](docs/derivation.md#5-pareto-frontier-dynamic-programming)
+6. [Fused execution and feature reuse](docs/derivation.md#6-why-fused-execution-reduces-work)
 
-## 这个模块解决什么问题
+## What the plug-in measures
 
-长尾训练里，常见做法是修改类别权重、调整 logits，或者增加采样次数。这些方法直接作用在分类目标上，但训练过程还有另一个变化来源。分类头 `W_t` 还在更新时，它产生的 encoder 梯度可能和“读出已经充分适应当前表示”时的梯度不同。
+Long-tailed training is often adjusted through class weights, logit corrections or sampling. Those choices act on the classification objective. They do not, by themselves, describe how an incompletely adapted readout changes the next encoder update.
 
-设当前 encoder 参数为 `ψ`，当前读出为 `W_t`，参考读出为 `W̃_t`。在同一个 FIT batch 上，定义反馈残差
+Let `ψ` denote the encoder parameters, `W_t` the current readout and `W̃_t` a FIT-only reference readout obtained by a short inner refinement. On the same batch, define
 
 $$
- e_t = \nabla_{\psi} L(\psi_t, W_t)
-      - \nabla_{\psi} L(\psi_t, \widetilde W_t).
+ e_t = \nabla_{\psi} L(\psi_t,W_t)
+      - \nabla_{\psi} L(\psi_t,\widetilde W_t).
 $$
 
-它回答的是一个很具体的问题：**当前读出没有完全准备好时，encoder 收到的更新信号改变了多少。**
+The residual `e_t` answers a narrow question. How much does the encoder update change when the current readout is replaced by the locally refined readout?
 
-为了让不同训练阶段的数值可以比较，模块还记录归一化指标
+The normalized diagnostic is
 
 $$
  \kappa_t =
@@ -54,9 +54,9 @@ $$
  {\lVert\nabla_{\psi}L(\psi_t,\widetilde W_t)\rVert_2+\delta}.
 $$
 
-这里的 `δ` 只是避免分母接近零。`κ_t` 越大，说明当前读出和参考读出对 encoder 的影响越不一致。模块会把它作为 FIT 诊断和动作选择的输入，而不是把它直接当成泛化定理。
+`κ_t` is a trajectory-level diagnostic. It is stored with the checkpoint, FIT batch, loss definition and calibration source that produced it. The plug-in does not treat this quantity as a population-level generalization bound.
 
-## 安装与第一次运行
+## Installation and first run
 
 ```bash
 git clone https://github.com/Oookla28/PV-MFAPS-Plugin.git
@@ -66,13 +66,15 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-先运行不依赖任何真实数据的 smoke。它会构造一个 12 类的校准表，调用 DP，输出每个类别的动作，并检查 `k=0` 时 `α` 是否为零。
+Run the dependency-light smoke test first.
 
 ```bash
 PYTHONPATH=src python scripts/smoke.py
 ```
 
-如果你的训练器已经准备好了 FIT-only 校准 JSON，可以直接生成动作计划。
+The smoke creates a deterministic twelve-class calibration table, solves the finite-action problem, checks the legality rule `k=0 ⇒ α=0`, and prints the selected action plan with its solver certificate.
+
+To build a plan from a host calibration file:
 
 ```bash
 PYTHONPATH=src python scripts/build_action_plan.py \
@@ -81,22 +83,17 @@ PYTHONPATH=src python scripts/build_action_plan.py \
   --output artifacts/action_plan.json
 ```
 
-输出文件包含动作向量、预算、目标值和求解器信息。它不读取图像，也不读取 held-out split，因此适合先检查策略是否接线正确。
+This command does not load images, checkpoints or an evaluation split. It is intended to verify the calibration-to-policy connection before a training job is started.
 
-## 三个核心模块
+For an editable installation:
 
-### 1. `policy.py`：从校准量生成动作计划
+```bash
+pip install -e .
+```
 
-主入口是 `build_plan`。它接收四组按类别排列的 FIT 校准量：
+## Public API
 
-| 量 | 含义 | 直观理解 |
-|---|---|---|
-| `A_c` | 当前类别的残差尺度 | 这个类别现在有多难处理 |
-| `rho_c` | 内循环收缩率代理 | 读出多走一步后，误差下降得快不快 |
-| `sigma_c` | 批次波动代理 | 这个类别的反馈是否容易受 batch 影响 |
-| `n_c` | FIT 支持数 | 校准时这个类别有多少样本 |
-
-最小调用例子如下。
+### Build an action plan
 
 ```python
 from pv_mfaps_plugin import build_plan
@@ -120,50 +117,11 @@ print(plan.alpha)
 print(plan.certificate)
 ```
 
-`plan.k[c]` 是类别 `c` 的内循环步数，`plan.alpha[c]` 是参考反馈混合比例。动作网格是离散的，默认候选为 `(0,0)`、`(1,0.25)`、`(2,0.25)` 和 `(4,0.25)`。这让每次分配都可以被打印、检查和复现。
+The calibration arrays use one fixed class order. `A` is the current residual scale, `rho` is the measured contraction proxy, `sigma` is the batch-variation proxy and `n` is the FIT support used for calibration. `plan.k[c]` gives the inner-loop steps for class `c`, while `plan.alpha[c]` gives its reference-feedback mixing coefficient.
 
-### 2. `allocator_core.py`：有限动作 Pareto DP
+The default action set is discrete. It contains `(0,0)`, `(1,0.25)`, `(2,0.25)` and `(4,0.25)`. A discrete plan is easy to inspect in a manifest and avoids hidden behaviour inside a continuous optimizer.
 
-模块把每个类别的候选动作写成一张小表。每个动作都有风险值和成本值，然后逐类累积。
-
-默认风险代理写成
-
-$$
- U_c(k,\alpha)=(1-\alpha)^2 A_c\rho_c^{2k}+\alpha^2\frac{\sigma_c^2}{n_c}\xi^k.
-$$
-
-第一项表示读出精化带来的偏差变化。第二项表示参考反馈和小样本波动带来的稳定性代价。`ξ` 是一个可配置的增长因子。
-
-整体优化目标是
-
-$$
- \min_{a_1,\ldots,a_C}
- \sum_{c=1}^{C}
- \left(\frac{\mu}{C}+\nu_c\right)U_c(a_c)
- \quad\text{subject to}\quad
- \sum_{c=1}^{C} d_c(a_c)\le B.
-$$
-
-- `a_c` 是类别 `c` 的动作。
-- `d_c(a_c)` 是该动作的成本。
-- `B` 是总预算。
-- `μ` 控制整体风险。
-- `ν_c` 可以提高尾部类别的权重。
-
-求解器使用 Pareto frontier 保存状态。对同一个量化成本，如果某个状态的风险和目标值都不优于另一个状态，就把它删掉。最终保留下来的最优状态就是**给定动作网格和量化成本问题上的离散解**。
-
-求解证书会记录：
-
-- 动作网格
-- 成本量化比例
-- 最终量化成本
-- 实际期望成本
-- 目标值
-- 每一阶段的 frontier 大小
-
-### 3. `fused.py`：把逻辑动作变成实际执行
-
-`FusedExecutor` 接收 host trainer 提供的 `encode` 和 `head` 函数。它在一次 batch 中先算出 encoder 特征，再把这个特征交给 native/reference readout 分支。
+### Use the Fused execution hook
 
 ```python
 from pv_mfaps_plugin import FusedExecutor, trace_summary
@@ -178,29 +136,56 @@ logits, alpha, trace = executor.forward(images, labels)
 print(trace_summary(trace))
 ```
 
-这里有两个容易混淆的计数：
+The trace separates two kinds of work. Logical counters describe the actions requested by the allocation policy. Physical counters describe the encoder forwards and backwards actually executed by the hardware. The host trainer remains responsible for the optimizer step.
 
-- **逻辑计数**：算法要求执行了多少次 native、reference 或 solver action。
-- **物理计数**：GPU 实际做了多少次 encoder forward/backward。
-
-Fused 的目标是保持逻辑动作不变，同时复用 encoder activation。Legacy/Fused 对照时，需要重新设置模型、优化器和随机种子，并在同一块 GPU 上同步计时。
-
-## 长尾损失
-
-模块提供两个常用的 loss helper。
+### Use long-tail losses
 
 ```python
 from pv_mfaps_plugin import balanced_softmax_loss, logit_adjusted_cross_entropy
 
 loss = balanced_softmax_loss(logits, labels, class_counts)
+# or
 loss = logit_adjusted_cross_entropy(logits, labels, class_counts, tau=1.0)
 ```
 
-如果训练器同时有 native、reference 和 Fused 分支，三者应使用同一套长尾 loss。否则反馈差异里会混入 loss 定义差异，难以判断变化来自读出精化还是来自类别先验。
+When native and reference branches are compared, they should use the same loss contract. Otherwise the measured feedback residual combines readout refinement with a change in the classification objective.
 
-## 评估入口
+## The allocation model
 
-训练过程只写 FIT 结果。模型、配置和来源哈希全部保存后，再调用 evaluation 入口。
+For class `c` and action `a=(k,α)`, the default risk proxy is
+
+$$
+U_c(k,\alpha)=(1-\alpha)^2 A_c\rho_c^{2k}+\alpha^2\frac{\sigma_c^2}{n_c}\xi^k.
+$$
+
+The first term describes the residual component that may decrease with additional inner steps. The second term records a stability cost that depends on batch variation, FIT support and the growth factor `ξ`.
+
+The allocator solves
+
+$$
+\min_{a_1,\ldots,a_C}
+\sum_{c=1}^{C}
+\left(\frac{\mu}{C}+\nu_c\right)U_c(a_c)
+\quad\text{subject to}\quad
+\sum_{c=1}^{C}d_c(a_c)\le B.
+$$
+
+`d_c(a_c)` is the measured or supplied cost of the action and `B` is the available budget. `ν_c` can give additional weight to a protected tail group. The full derivation, including a worked example, is in [`docs/derivation.md`](docs/derivation.md).
+
+## Integration points
+
+| Hook | Input | Output | Host responsibility |
+|---|---|---|---|
+| `build_plan` | FIT calibration arrays and budget | `ActionPlan` | choose calibration data and schedule |
+| `FusedExecutor.forward` | batch, labels, action plan | logits, per-sample α, trace | optimizer step and checkpointing |
+| `balanced_softmax_loss` | logits, labels, counts | loss tensor | data loader and class-count contract |
+| `evaluation.py` | frozen run directory | FIT summary | post-freeze evaluation split |
+
+A host adapter should provide a FIT split, a separate evaluation split, a stable class order, a deterministic reference probe and measured native/reference costs. Each arm and seed should write to an isolated output directory. Checkpoints should be frozen before the evaluation entrypoint reads the evaluation split.
+
+## Evaluation entrypoint
+
+The compact evaluation helper aggregates executed FIT artifacts.
 
 ```bash
 PYTHONPATH=src python -m pv_mfaps_plugin.evaluation \
@@ -209,59 +194,20 @@ PYTHONPATH=src python -m pv_mfaps_plugin.evaluation \
   --output /path/to/fit_summary.json
 ```
 
-聚合结果包含：
+The summary records Macro-F1, Tail-10 metrics, wall-clock and FLOPs when those fields are present in the host artifacts. A host-specific held-out evaluator should remain in the host project so that its freeze and one-time-read protocol stays close to the data contract.
 
-- Macro-F1
-- Tail-10 F1 或 Tail-10 recall
-- wall-clock
-- FLOPs
-- 每个 arm 的运行数量
+## Reference measurements from the source project
 
-真实项目中的 held-out evaluator 应由 host trainer 管理。这样数据集划分、冻结时机和一次性读取规则可以在同一个实验合同中保持一致。
+The following values come from the source PlantSPD and CIFAR-LT execution contracts. They indicate the scale of the complete integration. The standalone package does not re-read those datasets.
 
-## 接入已有训练器需要准备什么
-
-一个 host adapter 至少需要提供：
-
-1. FIT 数据和独立 evaluation 数据。
-2. 稳定的类别顺序和类别计数。
-3. 固定的 reference probe。
-4. native、solver、reference 的实际成本记录。
-5. 每个 arm 和 seed 独立的输出目录。
-6. 训练完成后的 freeze 和 evaluation 入口。
-
-建议接入顺序如下：
-
-```text
-读取 FIT checkpoint
-      ↓
-建立 reference probe
-      ↓
-计算 A / rho / sigma / n
-      ↓
-调用 build_plan
-      ↓
-执行 Legacy 或 Fused
-      ↓
-写入动作和计数 trace
-      ↓
-冻结 checkpoint
-      ↓
-单独运行 evaluation
-```
-
-## 源项目中的参考测量
-
-下面的数字来自源项目已经完成的 PlantSPD 和 CIFAR-LT 执行合同，用来帮助使用者判断模块接入后的量级。独立仓库中的 smoke 不会重新读取这些数据，也不会把这些数字当作本包自动产生的结果。
-
-| 执行合同 | 参考结果 |
+| Contract | Reference measurement |
 |---|---:|
-| PlantSPD，PR-PV-MFAPS 对 matched fixed-k | Macro-F1 `0.4841` 对 `0.4553`，Tail-10 F1 `0.2976` 对 `0.2659` |
-| PlantSPD，匹配执行成本 | 最大 FLOPs 比 `0.8889`，最大 wall-clock 比 `0.9974` |
-| CIFAR-100-LT Stage-TRR-10，200 epoch | Macro-F1 `0.4221 ± 0.0064`，Tail-10 F1 `0.2389 ± 0.0110` |
-| CIFAR-100-LT Fused/Legacy 配对 | state max delta `4.47 × 10⁻⁸`，配对 30 epoch 中 encoder forward `2,580` 对 `54,180` |
+| PlantSPD, PR-PV-MFAPS versus matched fixed-k | Macro-F1 `0.4841` versus `0.4553`; Tail-10 F1 `0.2976` versus `0.2659` |
+| PlantSPD matched execution cost | maximum FLOPs ratio `0.8889`; maximum wall-clock ratio `0.9974` |
+| CIFAR-100-LT Stage-TRR-10, 200 epochs | Macro-F1 `0.4221 ± 0.0064`; Tail-10 F1 `0.2389 ± 0.0110` |
+| CIFAR-100-LT Fused/Legacy pair | state max delta `4.47 × 10⁻⁸`; encoder forwards `2,580` versus `54,180` in the paired 30-epoch run |
 
-## 目录结构
+## Repository layout
 
 ```text
 PV-MFAPS-Plugin/
@@ -276,9 +222,9 @@ PV-MFAPS-Plugin/
 │   └── derivation.md
 ├── examples/calibration.json
 ├── scripts/
-│   ├── smoke.py
 │   ├── build_action_plan.py
-│   └── equivalence_smoke.py
+│   ├── equivalence_smoke.py
+│   └── smoke.py
 ├── src/pv_mfaps_plugin/
 │   ├── __init__.py
 │   ├── allocator_core.py
@@ -289,24 +235,20 @@ PV-MFAPS-Plugin/
 └── tests/test_allocator.py
 ```
 
-## 常见误区
+## Failure modes worth checking first
 
-- `k` 越大不一定越好。小样本类别的波动项可能随着精化动作增加。
-- `κ` 是反馈诊断量，不等于分类准确率，也不自动等于总体泛化误差。
-- DP 证书只描述给定风险表、动作网格和量化成本下的离散问题。
-- FLOPs 下降不一定带来同等 wall-clock 下降。数据加载、同步和 kernel launch 需要单独测量。
-- 训练阶段不应提前读取 evaluation split。冻结、读取次数和来源哈希应写入 host manifest。
+- Increasing `k` does not guarantee a lower total risk. The stability term can become dominant for small-support classes.
+- `κ_t` is a feedback diagnostic. It is not the same quantity as accuracy or a generalization error.
+- The DP certificate is exact only for the supplied risk table, action grid and quantised cost problem.
+- A lower FLOPs count does not guarantee the same reduction in wall-clock time. Data loading, synchronization and kernel launches must be timed separately.
+- Legacy and Fused comparisons require independent model states, optimizer states and random seeds.
 
-## 复现环境
+## Reproducibility
 
-- Python 3.10 或更新版本
-- NumPy 1.24 或更新版本
-- PyTorch 2.x
-- 源项目使用 NVIDIA CUDA GPU 进行训练
-- allocator smoke 可以在 CPU 上运行
+The package supports Python 3.10 or newer, NumPy 1.24 or newer and PyTorch 2.x. The source training contracts used NVIDIA CUDA GPUs, while the allocator smoke runs on CPU. A host project should record seeds, class ordering, calibration files, action grids, budget scale, cost model and source hashes in its own manifest.
 
-完整运行命令、随机种子、类别顺序、校准文件、动作网格和成本模型应由 host 项目写入自己的实验 manifest。这个独立仓库不包含图像、checkpoint、服务器信息或内部研究日志。
+This repository contains only the plug-in implementation, its mathematical documentation, minimal examples and executable checks. It does not contain images, checkpoints, server credentials or internal research logs.
 
-## 引用与许可
+## Citation and licence
 
-引用信息见 [`CITATION.cff`](CITATION.cff)。代码使用 MIT License。数据集和预训练权重仍遵循各自的原始许可。
+Citation metadata is provided in [`CITATION.cff`](CITATION.cff). The code is released under the MIT License. Dataset and pretrained-weight terms remain those of their original providers.
