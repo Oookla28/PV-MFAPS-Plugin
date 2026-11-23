@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="920" viewBox="0 0 1600 920" role="img" aria-labelledby="title desc">
+  <title id="title">PV-MFAPS plug-in architecture</title>
+  <desc id="desc">A detailed flow from host training data through calibration, feedback risk estimation, discrete policy allocation, fused execution, and evaluation.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f7f9ff"/><stop offset="1" stop-color="#eef2fb"/></linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#263b75"/><stop offset="1" stop-color="#4967c2"/></linearGradient>
+    <linearGradient id="orange" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c65f1d"/><stop offset="1" stop-color="#e99a43"/></linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#217864"/><stop offset="1" stop-color="#4eb48f"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="5" stdDeviation="7" flood-color="#22335d" flood-opacity="0.16"/></filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0,0 L12,6 L0,12 z" fill="#5d6a87"/></marker>
+    <marker id="arrowOrange" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0,0 L12,6 L0,12 z" fill="#c65f1d"/></marker>
+    <style>
+      .title{font:700 30px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#1d2b4c}
+      .subtitle{font:400 16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#53627f}
+      .head{font:700 17px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#ffffff}
+      .body{font:500 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#243452}
+      .small{font:400 12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#52627e}
+      .label{font:700 12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#ffffff;letter-spacing:0.6px}
+      .panel{fill:#ffffff;stroke:#d3dbed;stroke-width:1.5}
+      .line{stroke:#687694;stroke-width:2.2;fill:none;marker-end:url(#arrow)}
+      .orangeLine{stroke:#c65f1d;stroke-width:2.8;fill:none;marker-end:url(#arrowOrange)}
+      .dash{stroke:#9aa6bd;stroke-width:1.7;stroke-dasharray:7 6;fill:none}
+    </style>
+  </defs>
+  <rect width="1600" height="920" fill="url(#bg)"/>
+  <text x="70" y="62" class="title">PV-MFAPS plug-in architecture</text>
+  <text x="70" y="92" class="subtitle">Feedback-aware precision allocation sits between an existing trainer and its readout / encoder update path.</text>
+
+  <rect x="55" y="125" width="1490" height="170" rx="22" class="panel" filter="url(#shadow)"/>
+  <rect x="55" y="125" width="1490" height="40" rx="22" fill="url(#blue)"/>
+  <text x="78" y="151" class="head">HOST TRAINER</text>
+  <rect x="85" y="190" width="230" height="72" rx="14" fill="#edf1ff" stroke="#b9c6ef"/>
+  <text x="108" y="218" class="body">Batch + labels</text><text x="108" y="241" class="small">class counts, split contract</text>
+  <rect x="350" y="190" width="230" height="72" rx="14" fill="#edf1ff" stroke="#b9c6ef"/>
+  <text x="375" y="218" class="body">Backbone encoder</text><text x="375" y="241" class="small">existing model, unchanged API</text>
+  <rect x="615" y="190" width="230" height="72" rx="14" fill="#edf1ff" stroke="#b9c6ef"/>
+  <text x="640" y="218" class="body">Native readout</text><text x="640" y="241" class="small">current Wₜ and training loss</text>
+  <rect x="880" y="190" width="250" height="72" rx="14" fill="#edf1ff" stroke="#b9c6ef"/>
+  <text x="905" y="218" class="body">Optimizer / scheduler</text><text x="905" y="241" class="small">the host keeps ownership</text>
+  <rect x="1165" y="190" width="360" height="72" rx="14" fill="#fff4e9" stroke="#f0c28f"/>
+  <text x="1190" y="218" class="body">Plug-in hook points</text><text x="1190" y="241" class="small">calibrate · choose action · execute · trace</text>
+
+  <path d="M315 226 H350" class="line"/><path d="M580 226 H615" class="line"/><path d="M845 226 H880" class="line"/><path d="M1130 226 H1165" class="orangeLine"/>
+
+  <rect x="55" y="340" width="690" height="500" rx="22" class="panel" filter="url(#shadow)"/>
+  <rect x="55" y="340" width="690" height="42" rx="22" fill="url(#blue)"/>
+  <text x="78" y="368" class="head">FIT-ONLY CALIBRATION AND ALLOCATION</text>
+  <rect x="90" y="415" width="285" height="105" rx="14" fill="#edf1ff" stroke="#b9c6ef"/>
+  <text x="112" y="444" class="body">Reference probe</text><text x="112" y="466" class="small">detached readout refinement</text><text x="112" y="486" class="small">records A, ρ, σ, n</text>
+  <rect x="420" y="415" width="285" height="105" rx="14" fill="#edf1ff" stroke="#b9c6ef"/>
+  <text x="442" y="444" class="body">Feedback risk</text><text x="442" y="466" class="small">bias, stability, EB proxy</text><text x="442" y="486" class="small">class and partition indexed</text>
+  <rect x="90" y="565" width="285" height="105" rx="14" fill="#fff4e9" stroke="#f0c28f"/>
+  <text x="112" y="594" class="body">Budget model</text><text x="112" y="616" class="small">measured native / solver / reference</text><text x="112" y="636" class="small">costs and wall-clock hooks</text>
+  <rect x="420" y="565" width="285" height="105" rx="14" fill="#fff4e9" stroke="#f0c28f"/>
+  <text x="442" y="594" class="body">Finite-action DP</text><text x="442" y="616" class="small">Pareto frontier over (k, α)</text><text x="442" y="636" class="small">quantised-cost certificate</text>
+  <path d="M232 520 V565" class="line"/><path d="M562 520 V565" class="line"/><path d="M375 617 H420" class="orangeLine"/>
+  <rect x="90" y="720" width="615" height="82" rx="14" fill="#edf8f3" stroke="#afdccc"/>
+  <text x="112" y="750" class="body">Action plan</text><text x="112" y="773" class="small">per-class k, α, q, expected cost, solver certificate</text>
+  <path d="M562 670 V720" class="orangeLine"/>
+
+  <rect x="805" y="340" width="740" height="500" rx="22" class="panel" filter="url(#shadow)"/>
+  <rect x="805" y="340" width="740" height="42" rx="22" fill="url(#green)"/>
+  <text x="828" y="368" class="head">EXECUTION, EVALUATION, AND EVIDENCE</text>
+  <rect x="840" y="415" width="300" height="105" rx="14" fill="#edf8f3" stroke="#afdccc"/>
+  <text x="862" y="444" class="body">Legacy executor</text><text x="862" y="466" class="small">reference action may repeat</text><text x="862" y="486" class="small">encoder feature computation</text>
+  <rect x="1200" y="415" width="300" height="105" rx="14" fill="#e8f7f0" stroke="#8ecdb0"/>
+  <text x="1222" y="444" class="body">Fused executor</text><text x="1222" y="466" class="small">reuse one encoder activation</text><text x="1222" y="486" class="small">keep logical actions unchanged</text>
+  <path d="M1140 468 H1200" class="orangeLine"/>
+  <rect x="840" y="565" width="300" height="105" rx="14" fill="#edf8f3" stroke="#afdccc"/>
+  <text x="862" y="594" class="body">Trace and counters</text><text x="862" y="616" class="small">native / reference / solver</text><text x="862" y="636" class="small">physical forward / backward</text>
+  <rect x="1200" y="565" width="300" height="105" rx="14" fill="#edf8f3" stroke="#afdccc"/>
+  <text x="1222" y="594" class="body">FIT freeze</text><text x="1222" y="616" class="small">checkpoint + config + source hash</text><text x="1222" y="636" class="small">held_reads remains zero</text>
+  <rect x="840" y="720" width="660" height="82" rx="14" fill="#f4efff" stroke="#cbb8ed"/>
+  <text x="862" y="750" class="body">Evaluation entrypoint</text><text x="862" y="773" class="small">macro-F1 · Tail-10% · FLOPs · wall-clock · one post-freeze evaluation split</text>
+  <path d="M990 520 V565" class="line"/><path d="M1350 520 V565" class="line"/><path d="M1140 617 H1200" class="line"/><path d="M1140 762 H1200" class="line"/>
+
+  <path d="M705 761 C760 761 770 761 840 761" class="orangeLine"/>
+  <text x="746" y="746" class="label" fill="#c65f1d">PLAN</text>
+  <path d="M1165 262 C1165 310 1060 315 1060 415" class="dash"/>
+  <text x="1077" y="316" class="small">host invokes plug-in after loading FIT state</text>
+  <text x="70" y="882" class="small">The plug-in owns calibration, allocation, and trace metadata. The host trainer owns the backbone, optimizer, data loader, and checkpoint lifecycle.</text>
+</svg>
